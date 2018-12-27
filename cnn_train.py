@@ -1,7 +1,7 @@
 from tensorflow.keras.models import load_model
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
-from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.callbacks import LambdaCallback,EarlyStopping
+from tensorflow.keras.optimizers import Adam, Nadam
+from tensorflow.keras.callbacks import LambdaCallback,EarlyStopping,TensorBoard
 from tensorflow.keras.utils import multi_gpu_model
 import multiprocessing
 import os,glob,sys,json
@@ -29,7 +29,7 @@ if __name__ == '__main__':
     #GPU設定
     config = tf.ConfigProto(gpu_options=tf.GPUOptions(allow_growth=False,
                                                       visible_device_list=args.gpu),
-                            allow_soft_placement=True, 
+                            allow_soft_placement=False, 
                             log_device_placement=False
                             )
     session = tf.Session(config=config)
@@ -54,14 +54,14 @@ if __name__ == '__main__':
 
     train_datagen = ImageDataGenerator(
                     rescale=1./255,
-                    rotation_range=90, # 90°まで回転
-                    width_shift_range=0.2, # 水平方向にランダムでシフト
-                    height_shift_range=0.2, # 垂直方向にランダムでシフト
+                    rotation_range=180, # 90°まで回転
+                    width_shift_range=0.1, # 水平方向にランダムでシフト
+                    height_shift_range=0.1, # 垂直方向にランダムでシフト
                     #channel_shift_range=50.0, # 色調をランダム変更
-                    shear_range=0.2, # 斜め方向(pi/8まで)に引っ張る
+                    shear_range=0.1, # 斜め方向(pi/8まで)に引っ張る
                     horizontal_flip=True, # 垂直方向にランダムで反転
                     vertical_flip=True, # 水平方向にランダムで反転
-                    zoom_range=0.2,
+                    zoom_range=0.1,
                     fill_mode='wrap'
                     )
 
@@ -71,6 +71,7 @@ if __name__ == '__main__':
     train_generator = train_datagen.flow_from_directory(
         img_dir,
         batch_size=batch_size,
+        # save_to_dir="temp/",
         target_size=STANDARD_SIZE)
     validation_generator = train_datagen.flow_from_directory(
         img_dir,
@@ -93,20 +94,21 @@ if __name__ == '__main__':
 
     print_callback = LambdaCallback(on_epoch_end=on_epoch_end)
     ES = EarlyStopping(monitor='loss', min_delta=0.001, patience=10, verbose=0, mode='auto')
+    TB = TensorBoard(write_grads=True,write_images=3, histogram_freq=1)
 
     if GPUs > 1:
         t_model = multi_gpu_model(model, gpus=GPUs)
     else:
         t_model = model
     model.compile(loss='categorical_crossentropy',
-                  optimizer=Adam(),
+                  optimizer=Nadam(),
                   metrics=['accuracy'])
 
     m = model
     if GPUs > 1:
         p_model = multi_gpu_model(model, gpus=GPUs)
         p_model.compile(loss='categorical_crossentropy',
-                      optimizer=Adam(),
+                      optimizer=Nadam(),
                       metrics=['accuracy'])
         m = p_model
 
@@ -114,12 +116,12 @@ if __name__ == '__main__':
     model.summary()
     m.fit_generator(
             train_generator,
-            callbacks=[print_callback,ES],
+            callbacks=[print_callback,ES,TB],
             # steps_per_epoch=512,
             epochs=epochs,
             validation_data=validation_generator,
             validation_steps=15,
             initial_epoch=start_idx,
             max_queue_size=process_count,
-            workers=3,
+            workers=4,
             use_multiprocessing=False)
