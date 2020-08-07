@@ -1,10 +1,3 @@
-from tensorflow.keras.models import load_model
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
-from tensorflow.keras.optimizers import Adam, Nadam
-from tensorflow.keras.callbacks import LambdaCallback,EarlyStopping,TensorBoard
-from tensorflow.keras.utils import multi_gpu_model, plot_model
-from tensorflow.keras import backend
-
 # from keras.models import load_model
 # from keras.preprocessing.image import ImageDataGenerator
 # from keras.optimizers import Adam, Nadam
@@ -35,13 +28,13 @@ if __name__ == '__main__':
     #パラメータ取得
     args = get_args()
     #GPU設定
-    config = tf.ConfigProto(gpu_options=tf.GPUOptions(allow_growth=False,
-                                                      visible_device_list=args.gpu),
-                            allow_soft_placement=True, 
-                            log_device_placement=False
-                            )
-    session = tf.Session(config=config)
-    backend.set_session(session)
+    # config = tf.ConfigProto(gpu_options=tf.GPUOptions(allow_growth=False,
+    #                                                   visible_device_list=args.gpu),
+    #                         allow_soft_placement=True, 
+    #                         log_device_placement=False
+    #                         )
+    # session = tf.Session(config=config)
+    # tf.keras.backend.set_session(session)
 
     GPUs = len(args.gpu.split(','))
     start_idx = args.idx
@@ -60,21 +53,21 @@ if __name__ == '__main__':
     img_dir = 'images/'
     # test_dir = 'test_images/'
 
-    train_datagen = ImageDataGenerator(
+    train_datagen = tf.keras.preprocessing.image.ImageDataGenerator(
                     rescale=1./255,
                     # samplewise_center=True,
                     # samplewise_std_normalization=True,
                     # zca_whitening=True,   # unknown
-                    rotation_range=90, # 90°まで回転
-                    width_shift_range=0.1, # 水平方向にランダムでシフト
-                    height_shift_range=0.1, # 垂直方向にランダムでシフト
+                    rotation_range=360, # 90°まで回転
+                    width_shift_range=0.4, # 水平方向にランダムでシフト
+                    height_shift_range=0.4, # 垂直方向にランダムでシフト
                     #channel_shift_range=50.0, # 色調をランダム変更
-                    shear_range=0.1, # 斜め方向(pi/8まで)に引っ張る
+                    shear_range=0.3, # 斜め方向(pi/8まで)に引っ張る
                     horizontal_flip=True, # 垂直方向にランダムで反転
                     vertical_flip=True, # 水平方向にランダムで反転
-                    zoom_range=0.1,
+                    zoom_range=0.5,
                     validation_split=0.1,
-                    fill_mode='wrap'
+                    fill_mode='reflect'
                     )
 
     # train_datagen.fit(xxxx)
@@ -99,37 +92,34 @@ if __name__ == '__main__':
 
     # モデルを読み込む
     if os.path.exists(model_path):
-        model = load_model(model_path)
+        model = tf.keras.models.load_model(model_path)
     else:
         model = build_cnn_model(train_generator.class_indices)
 
     def on_epoch_end(epoch, logs):
         model.save(model_path)
+        model.save( str(epoch) + model_path)
 
-    print_callback = LambdaCallback(on_epoch_end=on_epoch_end)
-    ES = EarlyStopping(monitor='loss', min_delta=0.001, patience=5, verbose=0, mode='auto')
-    TB = TensorBoard(histogram_freq=1)
+    print_callback = tf.keras.callbacks.LambdaCallback(on_epoch_end=on_epoch_end)
+    ES = tf.keras.callbacks.EarlyStopping(monitor='loss', min_delta=0.001, patience=5, verbose=0, mode='auto')
+    # TB = TensorBoard(histogram_freq=1)
     # TB = TensorBoard(write_grads=True,write_images=3, histogram_freq=1)
 
     model.summary()
-    plot_model(model, to_file='model.png')
-
+    tf.keras.utils.plot_model(model, to_file='model.png')
     m = model
-    if GPUs > 1:
-        m = multi_gpu_model(model, gpus=GPUs)
-
     m.compile(loss='categorical_crossentropy',
-                    optimizer=Nadam(lr=1e-4),
+                    optimizer=tf.keras.optimizers.Adam(),
                     metrics=['accuracy'])
 
     m.fit_generator(
             train_generator,
-            callbacks=[print_callback,ES,TB],
-            # steps_per_epoch=414,
+            callbacks=[print_callback,ES],
+            steps_per_epoch=500,
             epochs=epochs,
             validation_data=validation_generator,
-            validation_steps=5,
+            validation_steps=10,
             initial_epoch=start_idx,
             max_queue_size=process_count,
-            workers=4,
+            workers=6,
             use_multiprocessing=False)
